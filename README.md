@@ -1,0 +1,2 @@
+# orgGPT
+Automated organisations

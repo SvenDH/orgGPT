@@ -19,16 +19,16 @@ working_directory = TemporaryDirectory()
 set_llm_cache(InMemoryCache())
 
 MODEL_PATH = "C:\\Users\\denha\\text-generation-webui\\models\\openhermes-2.5-mistral-7b\\openhermes-2.5-mistral-7b.Q4_K_M.gguf"
-MODEL_PATH = "C:\\Users\\denha\\text-generation-webui\\models\\mistral-7b-instruct\\mistral-7b-instruct-v0.1.Q4_K_M.gguf"
+#MODEL_PATH = "C:\\Users\\denha\\text-generation-webui\\models\\mistral-7b-instruct\\mistral-7b-instruct-v0.1.Q4_K_M.gguf"
 
-MODEL_PATH = "D:\\Downloads\\mistral-7b-instruct-v0.1.Q4_K_M.gguf"
+#MODEL_PATH = "D:\\Downloads\\mistral-7b-instruct-v0.1.Q4_K_M.gguf"
 #MODEL_PATH = "D:\\Downloads\\openhermes-2.5-mistral-7b.Q4_K_M.gguf"
-MODEL_PATH = "D:\\Downloads\\tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf"
+#MODEL_PATH = "D:\\Downloads\\tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf"
 
 
 callback_manager = CallbackManager([StreamingStdOutCallbackHandler()])
 
-llm = ZephyrChat(
+llm = MistralChat(
     llm=LlamaCpp(
         model_path=MODEL_PATH,
         n_gpu_layers=33,
@@ -41,14 +41,14 @@ llm = ZephyrChat(
     )
 )
 
-tool_calling_model = ToolCalling(model=llm)
-
 search_tool = DuckDuckGoSearchRun()
 
 tools = FileManagementToolkit(
     root_dir="data", #str(working_directory.name),
     selected_tools=["read_file", "write_file", "list_directory"],
 ).get_tools() + [search_tool]
+
+tool_calling_model = ToolCalling(model=llm, tools=tools)
 
 researcher = Agent(
   role='Senior Research Analyst',

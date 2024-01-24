@@ -1,6 +1,7 @@
 import json
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
+from langchain_core.pydantic_v1 import Field
 from langchain_core.callbacks import CallbackManagerForLLMRun
 from langchain.chat_models.base import BaseChatModel
 from langchain.schema import (
@@ -40,18 +41,19 @@ Do you have enough information to respond with a final answer to the user or do 
 
 OUTPUT_GRAMMAR = '''
 root ::= (
-    "Thought: " string "\\n" ( action | final )
+    thought "\\n" ( action | final )
 )
 action ::= ( 
-    "Action: " tool_names "\\n"
-    "Action Input: " string "\\n"
+    "Action: " tool-names "\\n"
+    "Action Input: " thought "\\n"
     "Observation: "
 )
-final ::= "Final Answer: " string "\\n"
+final ::= "Final Answer: " thought "\\n"
 
-tool_names ::= ( {tool_names} )
+tool-names ::= ( {tool_names} )
+{tool_input}
 
-string ::= [^\n]*
+thought ::= [^\\n]*
 '''
 
 
@@ -71,6 +73,8 @@ class ToolCalling(BaseChatModel):
     reason_template_n: str = REASON_TEMPLATE_N
     reason_step: bool = True
 
+    tools: List[StructuredTool] = Field(default_factory=list)
+
     @property
     def _llm_type(self) -> str:
         return "tool-call-support"
@@ -80,20 +84,42 @@ class ToolCalling(BaseChatModel):
         messages: List[BaseMessage],
         stop: Optional[List[str]] = None,
         run_manager: Optional[CallbackManagerForLLMRun] = None,
-        tools: Optional[List[StructuredTool]] = None,
         **kwargs: Any,
     ) -> ChatResult:
-        
-        print("=====================================")
-        print(messages[-1].content)
-        print("=====================================")
+        print(messages[0].content)
 
-        if not tools:
-            r = self.model._generate(messages, **kwargs)
-            print(r.generations[0].text)
-            return r
+        from llama_cpp import LlamaGrammar
+
+        response_tool = StructuredTool.from_function(self.respond_to_user_fn)
+
+        tools = self.tools + [response_tool]
+        tools_schema = tools_to_schema(tools)
+        prop_order = ["tool", "arguments"]
+        
+        input_grammar = schema_to_grammar(tools_schema, prop_order=prop_order).replace("root ::= ", "tool-input ::= ")        
+        grammar = OUTPUT_GRAMMAR.format(tool_names=" | ".join([f'"{tool.name}"' for tool in tools]), tool_input=input_grammar)
+        grammar = LlamaGrammar.from_string(grammar, verbose=False)
 
         *prev_messages, last_message = messages
+
+        augmented_messages, tool_call_num = self._augment_messages(prev_messages, tools)
+
+        if isinstance(last_message, HumanMessage):
+            thought_prompt = self.reason_prompt_1(user_request=last_message.content)
+        else:  # function message
+            thought_prompt = self.reason_prompt_n(tool_call_result=last_message.content, tool_call_num=tool_call_num)
+
+        augmented_message = HumanMessage(content=thought_prompt)
+        augmented_messages.append(augmented_message)
+
+        response_message = self.model.predict_messages(
+            augmented_messages,
+            stop=stop,
+            #grammar=None if self.reason_step else grammar,
+            grammar=grammar
+        )
+
+        print(response_message.content)
 
         if not isinstance(last_message, (HumanMessage, FunctionMessage)):
             raise ValueError("last message in messages must be a HumanMessage or FunctionMessage")
@@ -113,11 +139,6 @@ class ToolCalling(BaseChatModel):
 
         augmented_message = HumanMessage(content=thought_prompt)
         augmented_messages.append(augmented_message)
-
-        from llama_cpp import LlamaGrammar
-        
-        grammar = schema_to_grammar(tools_schema, prop_order=prop_order)
-        grammar = LlamaGrammar.from_string(grammar, verbose=False)
 
         response_message = self.model.predict_messages(
             augmented_messages,

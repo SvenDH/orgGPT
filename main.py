@@ -1,5 +1,7 @@
 from tempfile import TemporaryDirectory
 
+from langchain.callbacks.manager import CallbackManager
+from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
 from langchain.globals import set_llm_cache
 from langchain.cache import InMemoryCache
 from langchain_community.tools import DuckDuckGoSearchRun
@@ -7,9 +9,10 @@ from langchain_community.llms import LlamaCpp
 from langchain_community.agent_toolkits import FileManagementToolkit
 from langchain.agents import AgentExecutor
 
-from llm import MistralInstruct
+from llm import MistralInstruct, MistralChat, ZephyrChat
 from tools import ToolCalling
-from agent import Agent
+
+from crewai import Agent, Task, Crew
 
 working_directory = TemporaryDirectory()
 
@@ -18,15 +21,23 @@ set_llm_cache(InMemoryCache())
 MODEL_PATH = "C:\\Users\\denha\\text-generation-webui\\models\\openhermes-2.5-mistral-7b\\openhermes-2.5-mistral-7b.Q4_K_M.gguf"
 MODEL_PATH = "C:\\Users\\denha\\text-generation-webui\\models\\mistral-7b-instruct\\mistral-7b-instruct-v0.1.Q4_K_M.gguf"
 
-llm = MistralInstruct(
+MODEL_PATH = "D:\\Downloads\\mistral-7b-instruct-v0.1.Q4_K_M.gguf"
+#MODEL_PATH = "D:\\Downloads\\openhermes-2.5-mistral-7b.Q4_K_M.gguf"
+MODEL_PATH = "D:\\Downloads\\tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf"
+
+
+callback_manager = CallbackManager([StreamingStdOutCallbackHandler()])
+
+llm = ZephyrChat(
     llm=LlamaCpp(
         model_path=MODEL_PATH,
         n_gpu_layers=33,
         n_batch=512,
         n_ctx=4096,
         f16_kv=True,
+        max_tokens=1024,
+        #callback_manager=callback_manager,
         verbose=False,
-        max_tokens=1024
     )
 )
 
@@ -39,24 +50,6 @@ tools = FileManagementToolkit(
     selected_tools=["read_file", "write_file", "list_directory"],
 ).get_tools() + [search_tool]
 
-"""
-agent_obj = Agent.from_llm_and_tools(
-    model=tool_calling_model, 
-    tools=tools,
-)
-
-agent = AgentExecutor.from_agent_and_tools(
-    agent=agent_obj, 
-    tools=tools, 
-    verbose=True,
-)
-
-agent.run("Look up the latest advancements in AI, write a blog post about it and store in a file named 'blog_text.txt'")
-"""
-
-
-from crewai import Agent, Task, Crew
-
 researcher = Agent(
   role='Senior Research Analyst',
   goal='Uncover cutting-edge developments in AI and data science',
@@ -64,9 +57,9 @@ researcher = Agent(
   Your expertise lies in identifying emerging trends.
   You have a knack for dissecting complex data and presenting
   actionable insights.""",
-  verbose=True,
+  verbose=False,
   allow_delegation=False,
-  tools=[search_tool],
+  tools=tools, #[search_tool],
   llm=tool_calling_model
 )
 writer = Agent(
@@ -75,7 +68,7 @@ writer = Agent(
   backstory="""You are a renowned Content Strategist, known for
   your insightful and engaging articles.
   You transform complex concepts into compelling narratives.""",
-  verbose=True,
+  verbose=False,
   allow_delegation=True,
   tools=tools,
   llm=tool_calling_model
@@ -103,7 +96,7 @@ task2 = Task(
 crew = Crew(
   agents=[researcher, writer],
   tasks=[task1, task2],
-  verbose=2, # You can set it to 1 or 2 to different logging levels
+  verbose=0, # You can set it to 1 or 2 to different logging levels
 )
 
 # Get your crew to work!

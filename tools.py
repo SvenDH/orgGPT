@@ -38,6 +38,23 @@ REASON_TEMPLATE_N = """The result of tool call {tool_call_num} is: {tool_call_re
 Do you have enough information to respond with a final answer to the user or do you need to call another tool to obtain more information? Answer with a single sentence."""
 
 
+OUTPUT_GRAMMAR = '''
+root ::= (
+    "Thought: " string "\\n" ( action | final )
+)
+action ::= ( 
+    "Action: " tool_names "\\n"
+    "Action Input: " string "\\n"
+    "Observation: "
+)
+final ::= "Final Answer: " string "\\n"
+
+tool_names ::= ( {tool_names} )
+
+string ::= [^\n]*
+'''
+
+
 def respond_to_user(answer: str):
     """A tool for responding to the user directly with the final answer."""
     return answer
@@ -66,8 +83,15 @@ class ToolCalling(BaseChatModel):
         tools: Optional[List[StructuredTool]] = None,
         **kwargs: Any,
     ) -> ChatResult:
+        
+        print("=====================================")
+        print(messages[-1].content)
+        print("=====================================")
+
         if not tools:
-            return self.model._generate(messages, **kwargs)
+            r = self.model._generate(messages, **kwargs)
+            print(r.generations[0].text)
+            return r
 
         *prev_messages, last_message = messages
 
@@ -93,8 +117,8 @@ class ToolCalling(BaseChatModel):
         from llama_cpp import LlamaGrammar
         
         grammar = schema_to_grammar(tools_schema, prop_order=prop_order)
-        print(grammar)
         grammar = LlamaGrammar.from_string(grammar, verbose=False)
+
         response_message = self.model.predict_messages(
             augmented_messages,
             stop=stop,

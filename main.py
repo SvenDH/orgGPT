@@ -7,7 +7,8 @@ from langchain.cache import InMemoryCache
 from langchain_community.tools import DuckDuckGoSearchRun
 from langchain_community.llms import LlamaCpp
 from langchain_community.agent_toolkits import FileManagementToolkit
-from langchain.agents import AgentExecutor
+from langchain.tools.render import render_text_description_and_args
+from langchain_core.runnables.config import RunnableConfig
 
 from llm import MistralInstruct, MistralChat, ZephyrChat
 from tools import ToolCalling
@@ -23,12 +24,12 @@ MODEL_PATH = "C:\\Users\\denha\\text-generation-webui\\models\\openhermes-2.5-mi
 
 #MODEL_PATH = "D:\\Downloads\\mistral-7b-instruct-v0.1.Q4_K_M.gguf"
 #MODEL_PATH = "D:\\Downloads\\openhermes-2.5-mistral-7b.Q4_K_M.gguf"
-#MODEL_PATH = "D:\\Downloads\\tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf"
+MODEL_PATH = "D:\\Downloads\\tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf"
 
 
 callback_manager = CallbackManager([StreamingStdOutCallbackHandler()])
 
-llm = MistralChat(
+llm = ZephyrChat(
     llm=LlamaCpp(
         model_path=MODEL_PATH,
         n_gpu_layers=33,
@@ -48,27 +49,53 @@ tools = FileManagementToolkit(
     selected_tools=["read_file", "write_file", "list_directory"],
 ).get_tools() + [search_tool]
 
-tool_calling_model = ToolCalling(model=llm, tools=tools)
+tool_calling_model = ToolCalling(model=llm)
 
-researcher = Agent(
+
+class StructuredAgent(Agent):
+    def execute_task(self, task: str, context: str = None, tools=None) -> str:
+        if context:
+            task = self.i18n.slice("task_with_context").format(
+                task=task, context=context
+            )
+
+        tools = tools or self.tools
+        self.agent_executor.tools = tools
+        self.llm.tools = tools
+        result = self.agent_executor.invoke(
+            {
+                "input": task,
+                "tool_names": ", ".join([t.name for t in tools]),
+                "tools": render_text_description_and_args(tools),
+            },
+            RunnableConfig(callbacks=[self.tools_handler]),
+        )["output"]
+
+        if self.max_rpm:
+            self._rpm_controller.stop_rpm_counter()
+
+        return result
+
+
+researcher = StructuredAgent(
   role='Senior Research Analyst',
   goal='Uncover cutting-edge developments in AI and data science',
   backstory="""You work at a leading tech think tank.
   Your expertise lies in identifying emerging trends.
   You have a knack for dissecting complex data and presenting
   actionable insights.""",
-  verbose=False,
+  verbose=True,
   allow_delegation=False,
-  tools=tools, #[search_tool],
+  tools=[search_tool],
   llm=tool_calling_model
 )
-writer = Agent(
+writer = StructuredAgent(
   role='Tech Content Strategist',
   goal='Craft compelling content on tech advancements',
   backstory="""You are a renowned Content Strategist, known for
   your insightful and engaging articles.
   You transform complex concepts into compelling narratives.""",
-  verbose=False,
+  verbose=True,
   allow_delegation=True,
   tools=tools,
   llm=tool_calling_model
@@ -96,7 +123,7 @@ task2 = Task(
 crew = Crew(
   agents=[researcher, writer],
   tasks=[task1, task2],
-  verbose=0, # You can set it to 1 or 2 to different logging levels
+  verbose=2, # You can set it to 1 or 2 to different logging levels
 )
 
 # Get your crew to work!

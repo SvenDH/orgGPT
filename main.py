@@ -1,23 +1,11 @@
-from tempfile import TemporaryDirectory
-
-from langchain.callbacks.manager import CallbackManager
-from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
-from langchain.globals import set_llm_cache
-from langchain.cache import InMemoryCache
 from langchain_community.tools import DuckDuckGoSearchRun
 from langchain_community.llms import LlamaCpp
 from langchain_community.agent_toolkits import FileManagementToolkit
-from langchain.tools.render import render_text_description_and_args
-from langchain_core.runnables.config import RunnableConfig
+from crewai import Task, Crew
 
 from llm import MistralInstruct, MistralChat, ZephyrChat
-from tools import ToolCalling
+from agent import StructuredAgent as Agent
 
-from crewai import Agent, Task, Crew
-
-working_directory = TemporaryDirectory()
-
-set_llm_cache(InMemoryCache())
 
 MODEL_PATH = "C:\\Users\\denha\\text-generation-webui\\models\\openhermes-2.5-mistral-7b\\openhermes-2.5-mistral-7b.Q4_K_M.gguf"
 #MODEL_PATH = "C:\\Users\\denha\\text-generation-webui\\models\\mistral-7b-instruct\\mistral-7b-instruct-v0.1.Q4_K_M.gguf"
@@ -26,8 +14,6 @@ MODEL_PATH = "C:\\Users\\denha\\text-generation-webui\\models\\openhermes-2.5-mi
 #MODEL_PATH = "D:\\Downloads\\openhermes-2.5-mistral-7b.Q4_K_M.gguf"
 MODEL_PATH = "D:\\Downloads\\tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf"
 
-
-callback_manager = CallbackManager([StreamingStdOutCallbackHandler()])
 
 llm = ZephyrChat(
     llm=LlamaCpp(
@@ -49,47 +35,33 @@ tools = FileManagementToolkit(
     selected_tools=["read_file", "write_file", "list_directory"],
 ).get_tools() + [search_tool]
 
-tool_calling_model = ToolCalling(model=llm)
 
-
-class StructuredAgent(Agent):
-    def execute_task(self, task: str, context: str = None, tools=None) -> str:
-        if context:
-            task = self.i18n.slice("task_with_context").format(
-                task=task, context=context
-            )
-
-        tools = tools or self.tools
-        self.agent_executor.tools = tools
-        self.llm.tools = tools
-        result = self.agent_executor.invoke(
-            {
-                "input": task,
-                "tool_names": ", ".join([t.name for t in tools]),
-                "tools": render_text_description_and_args(tools),
-            },
-            RunnableConfig(callbacks=[self.tools_handler]),
-        )["output"]
-
-        if self.max_rpm:
-            self._rpm_controller.stop_rpm_counter()
-
-        return result
-
-
-researcher = StructuredAgent(
+researcher = Agent(
   role='Senior Research Analyst',
-  goal='Uncover cutting-edge developments in AI and data science',
-  backstory="""You work at a leading tech think tank.
-  Your expertise lies in identifying emerging trends.
-  You have a knack for dissecting complex data and presenting
-  actionable insights.""",
+  goal='Searching the internet, comprehending details, and finding information.',
+  backstory="""You are an advanced web information retriever. You will receive a goal and need to perform research to answer it.
+      1. You **MUST** first plan your research.
+
+      2. For each step, you will web search for results. You can perform queries in parallel.
+
+        Do NOT perform yearly individual searches unless absolutely required. This wastes resources and time. Always aim for consolidated data over a range of years.
+
+        Example of undesired behavior: Searching "US births 2019", then "US births 2020", then "US births 2021"...
+        Desired behavior: Searching "US births from 2019 to 2021"
+
+      3. If by searching for something specific you find something else that is relevant, state it and consider it.
+
+      4. If the research verification says the data is incomplete, search for the missing data. If you still cannot find it, consider it unavailable and don't fail; just return it.
+
+      5. Use scrape_text for getting all the text from a webpage, but not for searching for specific information.
+      
+      6. RESPECT USER'S DESIRED FORMAT""",
   verbose=True,
   allow_delegation=False,
-  tools=[search_tool],
-  llm=tool_calling_model
+  tools=tools,
+  llm=llm
 )
-writer = StructuredAgent(
+writer = Agent(
   role='Tech Content Strategist',
   goal='Craft compelling content on tech advancements',
   backstory="""You are a renowned Content Strategist, known for
@@ -98,7 +70,7 @@ writer = StructuredAgent(
   verbose=True,
   allow_delegation=True,
   tools=tools,
-  llm=tool_calling_model
+  llm=llm
 )
 
 # Create tasks for your agents

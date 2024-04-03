@@ -12,10 +12,10 @@ MODEL_PATH = "C:\\Users\\denha\\text-generation-webui\\models\\openhermes-2.5-mi
 
 #MODEL_PATH = "D:\\Downloads\\mistral-7b-instruct-v0.1.Q4_K_M.gguf"
 #MODEL_PATH = "D:\\Downloads\\openhermes-2.5-mistral-7b.Q4_K_M.gguf"
-MODEL_PATH = "D:\\Downloads\\tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf"
+#MODEL_PATH = "D:\\Downloads\\tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf"
 
 
-llm = ZephyrChat(
+llm = MistralChat(
     llm=LlamaCpp(
         model_path=MODEL_PATH,
         n_gpu_layers=33,
@@ -23,8 +23,8 @@ llm = ZephyrChat(
         n_ctx=4096,
         f16_kv=True,
         max_tokens=1024,
-        #callback_manager=callback_manager,
         verbose=False,
+        temperatur=0.01,
     )
 )
 
@@ -33,11 +33,11 @@ search_tool = DuckDuckGoSearchRun()
 tools = FileManagementToolkit(
     root_dir="data", #str(working_directory.name),
     selected_tools=["read_file", "write_file", "list_directory"],
-).get_tools() + [search_tool]
+).get_tools()
 
 
 researcher = Agent(
-  role='Senior Research Analyst',
+  role='Researcher',
   goal='Searching the internet, comprehending details, and finding information.',
   backstory="""You are an advanced web information retriever. You will receive a goal and need to perform research to answer it.
       1. You **MUST** first plan your research.
@@ -58,15 +58,13 @@ researcher = Agent(
       6. RESPECT USER'S DESIRED FORMAT""",
   verbose=True,
   allow_delegation=False,
-  tools=tools,
+  tools=tools + [search_tool],
   llm=llm
 )
 writer = Agent(
-  role='Tech Content Strategist',
-  goal='Craft compelling content on tech advancements',
-  backstory="""You are a renowned Content Strategist, known for
-  your insightful and engaging articles.
-  You transform complex concepts into compelling narratives.""",
+  role='Synthesizer',
+  goal='Reads text files, analyzing and gathering data and information from text files, generating summaries and reports, and analyzing text.',
+  backstory="""You are a reader and synthesizer agent. Your job is to read text files, analyze text file contents""",
   verbose=True,
   allow_delegation=True,
   tools=tools,
